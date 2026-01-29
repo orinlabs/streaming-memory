@@ -31,3 +31,4 @@ export default function ResponseSection({ response, latency, isSpeaking }) {
 
 
 
+

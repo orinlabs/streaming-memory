@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 /**
  * useWebSocketVoice - WebSocket voice agent hook
@@ -6,7 +11,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 export function useWebSocketVoice(serverUrl) {
   const wsRef = useRef(null);
-  const [stage, setStage] = useState('idle');
+  const [stage, setStage] = useState("idle");
 
   // Audio capture
   const audioContextRef = useRef(null);
@@ -17,21 +22,21 @@ export function useWebSocketVoice(serverUrl) {
   const isRecordingRef = useRef(false);
 
   // State
-  const [fullTranscript, setFullTranscript] = useState('');
-  const [displayedTranscript, setDisplayedTranscript] = useState('');
-  const [currentThinking, setCurrentThinking] = useState('');
+  const [fullTranscript, setFullTranscript] = useState("");
+  const [displayedTranscript, setDisplayedTranscript] = useState("");
+  const [currentThinking, setCurrentThinking] = useState("");
   const [isThinking, setIsThinking] = useState(false);
-  const [thinkingCommitted, setThinkingCommitted] = useState(false);  // True after EndOfTurn - don't clear
-  const thinkingCommittedRef = useRef(false);  // Ref for callback access
-  const [currentResponse, setCurrentResponse] = useState('');
+  const [thinkingCommitted, setThinkingCommitted] = useState(false); // True after EndOfTurn - don't clear
+  const thinkingCommittedRef = useRef(false); // Ref for callback access
+  const [currentResponse, setCurrentResponse] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [responseLatency, setResponseLatency] = useState(null);
   const [userSpeaking, setUserSpeaking] = useState(false);
   const [error, setError] = useState(null);
-  const [eagerEndOfTurn, setEagerEndOfTurn] = useState(false);  // Debug: show when EagerEndOfTurn fires
-  const [modelContext, setModelContext] = useState(null);  // Debug: show model's context
-  const [thinkingStalled, setThinkingStalled] = useState(false);  // Debug: show when model stalls while user speaking
-  const [stallInfo, setStallInfo] = useState(null);  // Info about the stall
+  const [eagerEndOfTurn, setEagerEndOfTurn] = useState(false); // Debug: show when EagerEndOfTurn fires
+  const [modelContext, setModelContext] = useState(null); // Debug: show model's context
+  const [thinkingStalled, setThinkingStalled] = useState(false); // Debug: show when model stalls while user speaking
+  const [stallInfo, setStallInfo] = useState(null); // Info about the stall
 
   // TTS
   const audioQueueRef = useRef([]);
@@ -54,7 +59,8 @@ export function useWebSocketVoice(serverUrl) {
       const srcIndexFloor = Math.floor(srcIndex);
       const srcIndexCeil = Math.min(srcIndexFloor + 1, inputBuffer.length - 1);
       const t = srcIndex - srcIndexFloor;
-      output[i] = inputBuffer[srcIndexFloor] * (1 - t) + inputBuffer[srcIndexCeil] * t;
+      output[i] =
+        inputBuffer[srcIndexFloor] * (1 - t) + inputBuffer[srcIndexCeil] * t;
     }
     return output;
   };
@@ -64,10 +70,10 @@ export function useWebSocketVoice(serverUrl) {
     const pcm16 = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
       const s = Math.max(-1, Math.min(1, float32Array[i]));
-      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
     const uint8 = new Uint8Array(pcm16.buffer);
-    let binary = '';
+    let binary = "";
     for (let i = 0; i < uint8.length; i++) {
       binary += String.fromCharCode(uint8[i]);
     }
@@ -89,7 +95,8 @@ export function useWebSocketVoice(serverUrl) {
       }
 
       if (!playbackCtxRef.current) {
-        playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        playbackCtxRef.current = new (window.AudioContext ||
+          window.webkitAudioContext)();
       }
       const ctx = playbackCtxRef.current;
 
@@ -111,123 +118,172 @@ export function useWebSocketVoice(serverUrl) {
       };
       source.start();
     } catch (err) {
-      console.error('[Voice] TTS error:', err);
+      console.error("[Voice] TTS error:", err);
       isPlayingRef.current = false;
       playNextChunk();
     }
   }, []);
 
   // Handle server messages
-  const handleMessage = useCallback((event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      const { type } = msg;
+  const handleMessage = useCallback(
+    (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        const { type } = msg;
 
-      switch (type) {
-        case 'connected':
-          setStage('connected');
-          break;
-        case 'status':
-          break;
-        case 'transcript':
-          if (msg.is_final) {
-            setFullTranscript(msg.full_transcript);
-            setDisplayedTranscript(msg.full_transcript);
-            setUserSpeaking(false);
-          } else {
-            setDisplayedTranscript(msg.full_transcript);
-            setUserSpeaking(true);
-          }
-          break;
-        case 'thinking_start':
-          setIsThinking(true);
-          // Only clear if thinking isn't committed
-          if (!thinkingCommittedRef.current) {
-            setCurrentThinking('');
-          }
-          break;
-        case 'thinking_end':
-          setIsThinking(false);
-          setThinkingStalled(false);
-          setStallInfo(null);
-          if (msg.latency_ms) setResponseLatency(msg.latency_ms);
-          break;
-        case 'token':
-          if (msg.is_thinking) {
-            setCurrentThinking(prev => prev + msg.t);
-          } else {
-            setCurrentResponse(prev => prev + msg.t);
-          }
-          break;
-        case 'restart_thinking':
-          // Ignore restart_thinking if thinking is committed (user finished speaking)
-          if (thinkingCommittedRef.current) {
+        switch (type) {
+          case "connected":
+            setStage("connected");
             break;
-          }
-          setCurrentThinking('');
-          setCurrentResponse('');
-          setIsThinking(true);
-          setEagerEndOfTurn(false);
-          setThinkingStalled(false);
-          setStallInfo(null);
-          break;
-        case 'EndOfTurn':
-          setEagerEndOfTurn(true);
-          setThinkingCommitted(true);
-          thinkingCommittedRef.current = true;  // Commit thinking - don't clear anymore
-          setTimeout(() => setEagerEndOfTurn(false), 2000);
-          break;
-        case 'context':
-          setModelContext(msg.prompt);
-          break;
-        case 'thinking_stalled':
-          console.warn('[Voice] THINKING STALLED:', msg);
-          setThinkingStalled(true);
-          setStallInfo(msg);
-          break;
-        case 'thinking_unstalled':
-          console.log('[Voice] Thinking unstalled:', msg);
-          setThinkingStalled(false);
-          setStallInfo(null);
-          break;
-        case 'response_complete':
-          setIsSpeaking(false);
-          // Reset for next turn
-          setThinkingCommitted(false);
-          thinkingCommittedRef.current = false;
-          setCurrentThinking('');
-          setCurrentResponse('');
-          break;
-        case 'tts_start':
-          setIsSpeaking(true);
-          // Don't clear queue if already playing - might lose audio
-          if (!isPlayingRef.current) {
-            audioQueueRef.current = [];
-          }
-          break;
-        case 'tts_audio':
-          audioQueueRef.current.push(msg.audio);
-          playNextChunk();
-          break;
-        case 'tts_end':
-          break;
-        default:
-          break;
+          case "status":
+            break;
+          case "transcript":
+            if (msg.is_final) {
+              setFullTranscript(msg.full_transcript);
+              setDisplayedTranscript(msg.full_transcript);
+              setUserSpeaking(false);
+            } else {
+              setDisplayedTranscript(msg.full_transcript);
+              setUserSpeaking(true);
+            }
+            break;
+          case "thinking_start":
+            setIsThinking(true);
+            // Only clear if thinking isn't committed
+            if (!thinkingCommittedRef.current) {
+              setCurrentThinking("");
+            }
+            break;
+          case "thinking_end":
+            setIsThinking(false);
+            setThinkingStalled(false);
+            setStallInfo(null);
+            if (msg.latency_ms) setResponseLatency(msg.latency_ms);
+            break;
+          case "token":
+            if (msg.is_thinking) {
+              setCurrentThinking((prev) => prev + msg.t);
+            } else {
+              setCurrentResponse((prev) => prev + msg.t);
+            }
+            break;
+          case "restart_thinking":
+            // Ignore restart_thinking if thinking is committed (user finished speaking)
+            if (thinkingCommittedRef.current) {
+              break;
+            }
+            setCurrentThinking("");
+            setCurrentResponse("");
+            setIsThinking(true);
+            setEagerEndOfTurn(false);
+            setThinkingStalled(false);
+            setStallInfo(null);
+            break;
+          case "EndOfTurn":
+            setEagerEndOfTurn(true);
+            setThinkingCommitted(true);
+            thinkingCommittedRef.current = true; // Commit thinking - don't clear anymore
+            setTimeout(() => setEagerEndOfTurn(false), 2000);
+            break;
+          case "context":
+            setModelContext(msg.prompt);
+            break;
+          case "thinking_stalled":
+            console.warn("[Voice] THINKING STALLED:", msg);
+            setThinkingStalled(true);
+            setStallInfo(msg);
+            break;
+          case "thinking_unstalled":
+            console.log("[Voice] Thinking unstalled:", msg);
+            setThinkingStalled(false);
+            setStallInfo(null);
+            break;
+          case "response_complete":
+            // Don't reset speaking yet - wait for audio to finish
+            // Reset for next turn (but keep isSpeaking true until tts_end)
+            setThinkingCommitted(false);
+            thinkingCommittedRef.current = false;
+            setCurrentThinking("");
+            // Don't clear response - keep it visible while audio plays
+            break;
+          case "tts_start":
+            setIsSpeaking(true);
+            // Don't clear queue if already playing - might lose audio
+            if (!isPlayingRef.current) {
+              audioQueueRef.current = [];
+            }
+            break;
+          case "tts_audio":
+            audioQueueRef.current.push(msg.audio);
+            playNextChunk();
+            break;
+          case "tts_end":
+            // Wait for audio queue to drain before resetting
+            const waitForAudioDrain = () => {
+              if (audioQueueRef.current.length === 0 && !isPlayingRef.current) {
+                setIsSpeaking(false);
+                setCurrentResponse("");
+              } else {
+                setTimeout(waitForAudioDrain, 200);
+              }
+            };
+            waitForAudioDrain();
+            break;
+          case "raw_token":
+            console.log(
+              "[DEBUG raw_token]",
+              msg.text,
+              "| thinking:",
+              msg.is_thinking,
+              "| len:",
+              msg.generated_len,
+              "| user_finished:",
+              msg.user_finished
+            );
+            break;
+          case "debug_empty":
+            console.warn(
+              "[DEBUG empty]",
+              "count:",
+              msg.count,
+              "| len:",
+              msg.generated_len,
+              "| user_finished:",
+              msg.user_finished
+            );
+            break;
+          case "metrics":
+            console.log(
+              "[METRICS]",
+              "avg_gen:",
+              msg.avg_generate_ms,
+              "ms | avg_trans:",
+              msg.avg_transcript_ms,
+              "ms"
+            );
+            break;
+          default:
+            console.log("[Voice] Unknown event:", type, msg);
+            break;
+        }
+      } catch (err) {
+        console.error("[Voice] Parse error:", err);
       }
-    } catch (err) {
-      console.error('[Voice] Parse error:', err);
-    }
-  }, [playNextChunk]);
+    },
+    [playNextChunk]
+  );
 
   // Connect
   const connect = useCallback(async () => {
-    if (stage !== 'idle') return;
+    if (stage !== "idle") return;
 
-    setStage('connecting');
+    setStage("connecting");
     setError(null);
 
     try {
-      const wsUrl = serverUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws';
+      const wsUrl =
+        serverUrl.replace("https://", "wss://").replace("http://", "ws://") +
+        "/ws";
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -237,21 +293,39 @@ export function useWebSocketVoice(serverUrl) {
       ws.onmessage = handleMessage;
 
       ws.onerror = (err) => {
-        console.error('[Voice] WebSocket ERROR:', err);
-        setError('Connection error');
-        setStage('error');
+        console.error("[Voice] WebSocket ERROR:", err);
+        setError("Connection error");
+        setStage("error");
       };
 
       ws.onclose = () => {
         wsRef.current = null;
-        setStage('idle');
+        setStage("idle");
         setIsRecording(false);
         isRecordingRef.current = false;
+        // Reset all state
+        setFullTranscript("");
+        setDisplayedTranscript("");
+        setCurrentThinking("");
+        setIsThinking(false);
+        setThinkingCommitted(false);
+        thinkingCommittedRef.current = false;
+        setCurrentResponse("");
+        setIsSpeaking(false);
+        setResponseLatency(null);
+        setUserSpeaking(false);
+        setError(null);
+        setEagerEndOfTurn(false);
+        setModelContext(null);
+        setThinkingStalled(false);
+        setStallInfo(null);
+        audioQueueRef.current = [];
+        isPlayingRef.current = false;
       };
     } catch (err) {
-      console.error('[Voice] Connect error:', err);
+      console.error("[Voice] Connect error:", err);
       setError(err.message);
-      setStage('error');
+      setStage("error");
     }
   }, [stage, serverUrl, handleMessage]);
 
@@ -259,7 +333,7 @@ export function useWebSocketVoice(serverUrl) {
   const disconnect = useCallback(() => {
     if (wsRef.current) wsRef.current.close();
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current.getTracks().forEach((t) => t.stop());
     }
   }, []);
 
@@ -278,15 +352,16 @@ export function useWebSocketVoice(serverUrl) {
         streamRef.current = stream;
 
         // Create audio context
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const AudioContextClass =
+          window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContextClass();
         audioContextRef.current = audioContext;
-        
+
         // Resume if suspended (required for user gesture)
-        if (audioContext.state === 'suspended') {
+        if (audioContext.state === "suspended") {
           await audioContext.resume();
         }
-        
+
         const sampleRate = audioContext.sampleRate;
 
         // Create source from mic
@@ -296,7 +371,7 @@ export function useWebSocketVoice(serverUrl) {
         // Create processor
         const processor = audioContext.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor;
-        
+
         // Reset counter
         chunksSentRef.current = 0;
 
@@ -306,29 +381,30 @@ export function useWebSocketVoice(serverUrl) {
           if (!isRecordingRef.current) {
             return;
           }
-          
+
           // Check WebSocket
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            console.warn('[Voice] WebSocket not ready, skipping audio chunk');
+            console.warn("[Voice] WebSocket not ready, skipping audio chunk");
             return;
           }
 
           // Get audio data
           const inputData = e.inputBuffer.getChannelData(0);
-          
+
           // Resample to 16kHz
           const resampled = resample(inputData, sampleRate, 16000);
-          
+
           // Convert to base64 PCM16
           const base64 = float32ToPcm16Base64(resampled);
-          
+
           // Send to server
           try {
-            wsRef.current.send(JSON.stringify({ type: 'audio', audio: base64 }));
+            wsRef.current.send(
+              JSON.stringify({ type: "audio", audio: base64 })
+            );
             chunksSentRef.current++;
-            
           } catch (err) {
-            console.error('[Voice] Error sending audio:', err);
+            console.error("[Voice] Error sending audio:", err);
           }
         };
 
@@ -339,15 +415,14 @@ export function useWebSocketVoice(serverUrl) {
         // Set recording state AFTER everything is set up
         isRecordingRef.current = true;
         setIsRecording(true);
-        
       } catch (err) {
-        console.error('[Voice] Recording error:', err);
+        console.error("[Voice] Recording error:", err);
         setError(`Microphone error: ${err.message}`);
       }
     } else {
       // STOP RECORDING
       isRecordingRef.current = false;
-      
+
       if (processorRef.current) {
         processorRef.current.disconnect();
         processorRef.current = null;
@@ -361,7 +436,7 @@ export function useWebSocketVoice(serverUrl) {
         audioContextRef.current = null;
       }
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       }
 

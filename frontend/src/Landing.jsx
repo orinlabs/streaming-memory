@@ -9,7 +9,6 @@ import {
 } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
-
 // Visual: Memory nodes flowing into context window
 function BandwidthVisual() {
   const [activeNodes, setActiveNodes] = useState([0, 2, 4]);
@@ -199,7 +198,7 @@ function EfficiencyGraph() {
         {/* RAG - starts at ~3k, grows to ~15k */}
         <path
           d={`M 50 ${logY(3000)} Q 150 ${logY(5000)} 220 ${logY(
-            8000
+            8000,
           )} T 380 ${logY(15000)}`}
           fill="none"
           stroke="#fb923c"
@@ -235,7 +234,6 @@ function EfficiencyGraph() {
 }
 
 export default function Landing() {
-
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-6">
@@ -466,13 +464,7 @@ export default function Landing() {
                 to="/demo"
                 className="inline-block px-8 py-4 bg-[#1a1a1a] text-white rounded-full font-medium hover:bg-[#333] transition-colors"
               >
-                Text Demo
-              </Link>
-              <Link
-                to="/voice"
-                className="inline-block px-8 py-4 bg-gradient-to-r from-violet-600 to-cyan-600 text-white rounded-full font-medium hover:from-violet-500 hover:to-cyan-500 transition-colors"
-              >
-                Voice Demo
+                Try the Demo
               </Link>
             </div>
 

@@ -17,7 +17,7 @@ from pathlib import Path
 
 import modal
 
-MODEL_ID = "Qwen/Qwen3-32B"
+MODEL_ID = "Qwen/Qwen3-8B"
 APP_NAME = "websocket-voice-agent"
 ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
 
@@ -51,7 +51,7 @@ SYSTEM_PROMPT = """You're a friend listening to someone tell you a story. Keep r
 
 @app.cls(
     image=image,
-    gpu="A100-80GB",
+    gpu="A10G",
     timeout=600,
     scaledown_window=60,
     secrets=[
@@ -152,6 +152,11 @@ class VoiceAgent:
             speech_end_time = 0.0
             last_speech_time = 0.0
             stop_generation = asyncio.Event()
+
+            # Timing metrics
+            last_transcript_time = 0.0
+            transcript_intervals = []
+            generate_latencies = []
 
             async def send(event_type: str, data: dict = {}):
                 msg = json.dumps({"type": event_type, **data})
@@ -299,15 +304,35 @@ class VoiceAgent:
                         return ""
 
                     loop = asyncio.get_event_loop()
+                    generate_start = time.time()
                     new_text = await loop.run_in_executor(None, do_generate)
+                    generate_latency_ms = (time.time() - generate_start) * 1000
+                    generate_latencies.append(generate_latency_ms)
+
+                    # Send metrics every 10 generations
+                    if len(generate_latencies) % 10 == 0:
+                        avg_gen = sum(generate_latencies[-50:]) / len(generate_latencies[-50:])
+                        avg_trans = sum(transcript_intervals[-50:]) / len(transcript_intervals[-50:]) if transcript_intervals else 0
+                        await send("metrics", {
+                            "avg_generate_ms": round(avg_gen, 1),
+                            "avg_transcript_ms": round(avg_trans, 1),
+                            "generate_count": len(generate_latencies),
+                            "transcript_count": len(transcript_intervals),
+                        })
 
                     if stop_generation.is_set():
                         break
 
                     if not new_text or len(new_text.strip()) == 0:
                         empty_generation_count += 1
+                        # Debug: notify frontend of empty generation
+                        await send("debug_empty", {
+                            "count": empty_generation_count,
+                            "generated_len": len(generated_text),
+                            "user_finished": user_finished_speaking,
+                        })
 
-                        if in_thinking and not user_finished_speaking and empty_generation_count >= 8 and len(generated_text) > 30:
+                        if in_thinking and not user_finished_speaking and empty_generation_count >= 3 and len(generated_text) > 30:
                             if not thinking_stalled:
                                 thinking_stalled = True
                                 stall_info = {
@@ -318,6 +343,21 @@ class VoiceAgent:
                                 }
                                 print(f"[{session_id}] THINKING STALLED (empty): {stall_info}")
                                 await send("thinking_stalled", stall_info)
+
+                        # If stall detected after response started, stop the LLM
+                        if not in_thinking and user_finished_speaking and empty_generation_count >= 3 and len(generated_text) > 10:
+                            print(f"[{session_id}] RESPONSE STALLED - stopping LLM (empty_count={empty_generation_count}, len={len(generated_text)})")
+                            await send("response_complete", {"reason": "stall_detected"})
+                            if tts_task and tts_queue:
+                                await tts_queue.put(None)
+                                await tts_task
+                                tts_task = None
+                            generated_text = ""
+                            saved_thinking = ""
+                            current_transcript_snapshot = ""
+                            in_thinking = True
+                            response_committed = False
+                            empty_generation_count = 0
 
                         await asyncio.sleep(0.05)
                         continue
@@ -343,6 +383,14 @@ class VoiceAgent:
                                 await send("thinking_stalled", stall_info)
 
                     generated_text += new_text
+                    
+                    # Debug: send raw token immediately before any filtering
+                    await send("raw_token", {
+                        "text": new_text,
+                        "is_thinking": in_thinking,
+                        "generated_len": len(generated_text),
+                        "user_finished": user_finished_speaking,
+                    })
 
                     if new_text.strip():
                         for char in new_text:
@@ -389,6 +437,7 @@ class VoiceAgent:
 
             async def run_deepgram():
                 nonlocal live_transcript, user_is_speaking, user_finished_speaking, speech_end_time, last_speech_time
+                nonlocal last_transcript_time, transcript_intervals
 
                 from deepgram import AsyncDeepgramClient
                 from deepgram.core.events import EventType
@@ -418,14 +467,28 @@ class VoiceAgent:
                         def on_deepgram_message(message):
                             nonlocal live_transcript, user_is_speaking, user_finished_speaking, speech_end_time, last_speech_time
                             nonlocal saved_thinking, generated_text, in_thinking
+                            nonlocal last_transcript_time, transcript_intervals
 
                             event = getattr(message, "event", None)
                             transcript = getattr(message, "transcript", None)
+                            words = getattr(message, "words", None)
+                            eot_confidence = getattr(message, "end_of_turn_confidence", None)
+                            # Debug: print actual values
+                            print(f"[{session_id}] DG: event={event} transcript={transcript[:30] if transcript else None} words={len(words) if words else 0} eot={eot_confidence}")
 
                             if event == "StartOfTurn":
                                 user_is_speaking = True
                                 user_finished_speaking = False
                                 asyncio.create_task(send("status", {"message": "Listening...", "stage": "listening"}))
+                                # Also send the transcript if present
+                                if transcript and transcript.strip():
+                                    live_transcript = transcript
+                                    asyncio.create_task(send("transcript", {
+                                        "text": transcript,
+                                        "is_final": False,
+                                        "full_transcript": transcript,
+                                        "user_speaking": True,
+                                    }))
 
                             elif event == "EagerEndOfTurn":
                                 user_is_speaking = False
@@ -470,7 +533,12 @@ class VoiceAgent:
 
                             elif transcript:
                                 live_transcript = transcript
-                                last_speech_time = time.time()
+                                now = time.time()
+                                if last_transcript_time > 0:
+                                    interval_ms = (now - last_transcript_time) * 1000
+                                    transcript_intervals.append(interval_ms)
+                                last_transcript_time = now
+                                last_speech_time = now
                                 asyncio.create_task(send("transcript", {
                                     "text": transcript,
                                     "is_final": False,
@@ -533,6 +601,15 @@ class VoiceAgent:
                         await task
                     except asyncio.CancelledError:
                         pass
+
+                # Log timing metrics
+                if transcript_intervals:
+                    avg_transcript = sum(transcript_intervals) / len(transcript_intervals)
+                    print(f"[{session_id}] Avg transcript interval: {avg_transcript:.1f}ms (n={len(transcript_intervals)})")
+                if generate_latencies:
+                    avg_generate = sum(generate_latencies) / len(generate_latencies)
+                    print(f"[{session_id}] Avg generate latency: {avg_generate:.1f}ms (n={len(generate_latencies)})")
+
                 print(f"[{session_id}] Disconnected")
 
         return fastapi_app
