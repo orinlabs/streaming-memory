@@ -66,6 +66,7 @@ image = (
     gpu="A100",
     timeout=600,
     scaledown_window=300,
+    min_containers=1,
 )
 class FamilyAssistant:
     """Family Assistant with streaming memory using local embeddings."""
