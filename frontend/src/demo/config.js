@@ -26,7 +26,6 @@ export const DEMO_CONFIG = {
     'Your assistant has access to ~280 memories spanning family, work, hobbies, and daily life.',
   placeholder: 'Ask for advice or help planning...',
   suggestedQuestions: [
-    'What should I get my dad for his birthday?',
     'I\'m feeling anxious about work lately, any advice?',
     'Help me figure out what to do about my apartment lease',
     'What could I get mom for her birthday?',
