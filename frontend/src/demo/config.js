@@ -2,6 +2,10 @@ export const API_URL =
   import.meta.env.VITE_API_URL ||
   'https://orin-labs--streaming-memory-familyassistant-serve.modal.run';
 
+export const SUPERMEMORY_API_URL =
+  import.meta.env.VITE_SUPERMEMORY_API_URL ||
+  'https://orin-labs--streaming-memory-supermemory-familyassistants-a06a7b.modal.run';
+
 export const SYSTEM_PROMPT = [
   'You are a helpful personal assistant who has access to the user\'s memories and notes.',
   '',

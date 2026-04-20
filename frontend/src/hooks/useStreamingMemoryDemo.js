@@ -5,7 +5,7 @@ import {
   useState,
 } from 'react';
 
-import { API_URL } from '../demo/config';
+import { API_URL as DEFAULT_API_URL } from '../demo/config';
 import { buildContextSnapshot } from '../demo/context';
 
 function updateAssistantMessage(messages, assistantId, updates) {
@@ -21,7 +21,8 @@ function updateAssistantMessage(messages, assistantId, updates) {
   });
 }
 
-export function useStreamingMemoryDemo() {
+export function useStreamingMemoryDemo(apiUrlOverride) {
+  const API_URL = apiUrlOverride || DEFAULT_API_URL;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);

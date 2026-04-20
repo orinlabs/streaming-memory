@@ -297,16 +297,47 @@ class StreamingMemoryService:
                 retrieve_ms = int((time.time() - t_retrieve) * 1000)
                 new_mem_contents = [m.content for m in new_memories]
 
-                if set(new_mem_contents) != set(current_mem_contents):
-                    added = [m for m in new_mem_contents if m not in current_mem_contents]
-                    removed = [m for m in current_mem_contents if m not in new_mem_contents]
+                current_set = set(current_mem_contents)
+                new_set = set(new_mem_contents)
 
-                    # Track unique memories
-                    for mem in new_mem_contents:
-                        all_unique_memories.add(mem)
-                        get_memory_tokens(mem)
+                if new_set == current_set:
+                    # Pure reordering (or nothing changed). Keep the existing
+                    # prompt byte-for-byte so the model's attention over the
+                    # memory block stays stable — no swap emitted.
+                    current_ids = outputs
+                else:
+                    # Stable slot-reorder: walk the previous list and, for
+                    # each slot, either (a) keep the survivor in place or
+                    # (b) fill the slot with an incoming memory when the old
+                    # one was dropped. Leftover additions go at the end.
+                    #
+                    # Example: [a,b,c] -> {a,c,d} becomes [a,d,c] so a and c
+                    # keep their token positions; only the slot that held b
+                    # is rewritten (with d).
+                    new_by_content = {m.content: m for m in new_memories}
+                    added_queue = [c for c in new_mem_contents if c not in current_set]
+                    added_idx = 0
+                    reordered_contents: list[str] = []
+                    for prev in current_mem_contents:
+                        if prev in new_set:
+                            reordered_contents.append(prev)
+                        elif added_idx < len(added_queue):
+                            reordered_contents.append(added_queue[added_idx])
+                            added_idx += 1
+                        # else: pure removal, slot collapses
+                    while added_idx < len(added_queue):
+                        reordered_contents.append(added_queue[added_idx])
+                        added_idx += 1
 
-                    current_mem_contents = new_mem_contents
+                    reordered_memories = [new_by_content[c] for c in reordered_contents]
+                    added_contents = list(added_queue)
+                    removed_contents = [c for c in current_mem_contents if c not in new_set]
+
+                    for mem_content in reordered_contents:
+                        all_unique_memories.add(mem_content)
+                        get_memory_tokens(mem_content)
+
+                    current_mem_contents = reordered_contents
                     messages = [
                         {"role": "system", "content": self.config.system_prompt},
                     ]
@@ -317,7 +348,7 @@ class StreamingMemoryService:
                     text = self.tokenizer.apply_chat_template(
                         messages, tokenize=False, add_generation_prompt=True
                     )
-                    text += self._format_thinking_prefix(new_memories)
+                    text += self._format_thinking_prefix(reordered_memories)
 
                     new_prefix_ids = self.tokenizer.encode(text, return_tensors="pt").to(
                         self.model.device
@@ -339,16 +370,16 @@ class StreamingMemoryService:
 
                     # Re-emit thinking prefix with updated memories
                     prefix_lines = ["I remember these things about the user:"]
-                    for mem in new_memories:
+                    for mem in reordered_memories:
                         prefix_lines.append(f"- {mem.content}")
                     prefix_lines.append("")
                     prefix_lines.append("I should use these memories to inform my response.\n")
                     yield StreamEvent('thinking_prefix', {'t': "\n".join(prefix_lines)})
 
                     yield StreamEvent('memory_update', {
-                        'memories': new_mem_contents,
-                        'added': added,
-                        'removed': removed,
+                        'memories': reordered_contents,
+                        'added': added_contents,
+                        'removed': removed_contents,
                         'base_context_size': base_context_size,
                         'current_memory_tokens': current_memory_tokens,
                         'rag_memory_tokens': rag_memory_tokens,
@@ -357,8 +388,6 @@ class StreamingMemoryService:
                         'token_history': token_history,
                         'retrieve_ms': retrieve_ms,
                     })
-                else:
-                    current_ids = outputs
 
         # Check if we hit max tokens without EOS
         hit_max = (

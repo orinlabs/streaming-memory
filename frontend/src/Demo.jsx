@@ -7,7 +7,7 @@ import SettingsPanel from './components/demo/SettingsPanel';
 import { DEMO_CONFIG } from './demo/config';
 import { useStreamingMemoryDemo } from './hooks/useStreamingMemoryDemo';
 
-export default function Demo() {
+export default function Demo({ apiUrl, label } = {}) {
   const {
     messages,
     input,
@@ -38,7 +38,7 @@ export default function Demo() {
     lastMessageRef,
     handleScroll,
     sendMessage,
-  } = useStreamingMemoryDemo();
+  } = useStreamingMemoryDemo(apiUrl);
 
   const hasMessages = messages.length > 0;
 
@@ -55,7 +55,7 @@ export default function Demo() {
             </Link>
             <div className="h-4 w-px bg-[#eee]" />
             <span className="text-xs text-[#999]">
-              {DEMO_CONFIG.name}
+              {label || DEMO_CONFIG.name}
             </span>
           </div>
 

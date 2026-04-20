@@ -12,6 +12,7 @@ import {
 
 import AryanDemo from './AryanDemo';
 import Demo from './Demo';
+import { SUPERMEMORY_API_URL } from './demo/config';
 import Landing from './Landing';
 import VoiceDemo from './VoiceDemo';
 import VoiceLiveKit from './VoiceLiveKit';
@@ -31,6 +32,15 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/demo" element={<Demo />} />
+          <Route
+            path="/superdemo"
+            element={
+              <Demo
+                apiUrl={SUPERMEMORY_API_URL}
+                label="Family Assistant · Supermemory"
+              />
+            }
+          />
           <Route path="/aryan" element={<AryanDemo />} />
           <Route path="/voice" element={<VoiceDemo />} />
           <Route path="/voice-livekit" element={<VoiceLiveKit />} />
