@@ -60,8 +60,8 @@ export function buildContextSnapshot({
 }) {
   const lines = []
     .concat(makeSection('SYSTEM', sanitizeBlock(SYSTEM_PROMPT, '[missing system prompt]')))
-    .concat(makeSection('CONVERSATION', buildConversationLines(history, userMessage)))
-    .concat(makeSection('WORKING MEMORY', buildWorkingMemoryLines(currentMemories)));
+    .concat(makeSection('WORKING MEMORY', buildWorkingMemoryLines(currentMemories)))
+    .concat(makeSection('CONVERSATION', buildConversationLines(history, userMessage)));
 
   return {
     lines,
