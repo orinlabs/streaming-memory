@@ -68,8 +68,10 @@ class StreamingMemoryService:
         self.model = model
         self.pool_total_tokens = pool_total_tokens
 
-    def _format_memories(self, memories: list) -> str:
-        """Format memories for inclusion in prompt."""
+    def _format_memory_block(self, memories: list) -> str:
+        """Render the memory block that sits between the system prompt and
+        the conversation. Returns an empty string when there are no memories.
+        """
         if not memories:
             return ""
         lines = [self.config.memory.memory_prefix]
@@ -77,21 +79,20 @@ class StreamingMemoryService:
             lines.append(f"- {mem.content}")
         return "\n".join(lines)
 
-    def _format_thinking_prefix(self, memories: list) -> str:
-        """Format memories as the start of a reasoning trace.
-
-        Instead of injecting memories into the system prompt, we seed the
-        model's <think> block so it begins reasoning with them in working memory.
+    def _build_messages(self, memories: list, history: list[dict], message: str) -> list[dict]:
+        """Compose the prompt messages in order:
+        system → memory (as a second system turn) → history → current user turn.
         """
-        if not memories:
-            return "<think>\n"
-        lines = ["<think>", "I remember these things about the user:"]
-        for mem in memories:
-            lines.append(f"- {mem.content}")
-        lines.append("")
-        lines.append("Let me think about these memories:")
-        lines.append("")
-        return "\n".join(lines)
+        messages: list[dict] = [
+            {"role": "system", "content": self.config.system_prompt}
+        ]
+        memory_block = self._format_memory_block(memories)
+        if memory_block:
+            messages.append({"role": "system", "content": memory_block})
+        for h in history[-6:]:
+            messages.append(h)
+        messages.append({"role": "user", "content": message})
+        return messages
 
     def generate_stream(
         self,
@@ -146,42 +147,28 @@ class StreamingMemoryService:
         for mem in current_mem_contents:
             get_memory_tokens(mem)
 
-        # Calculate base context size (without memories)
-        base_messages = [{"role": "system", "content": self.config.system_prompt}]
-        for h in history[-6:]:
-            base_messages.append(h)
-        base_messages.append({"role": "user", "content": message})
+        # Base context size = prompt WITHOUT the memory block (system + history + user).
         base_text = self.tokenizer.apply_chat_template(
-            base_messages, tokenize=False, add_generation_prompt=True
+            self._build_messages([], history, message),
+            tokenize=False,
+            add_generation_prompt=True,
         )
         base_context_size = len(self.tokenizer.encode(base_text))
 
-        # Build prompt without memories in system message
-        messages = [
-            {"role": "system", "content": self.config.system_prompt},
-        ]
-        for h in history[-6:]:
-            messages.append(h)
-        messages.append({"role": "user", "content": message})
-
+        # Full prompt: system → memories → history → user → (assistant + <think>)
         text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            self._build_messages(memories, history, message),
+            tokenize=False,
+            add_generation_prompt=True,
         )
-
-        # Seed the reasoning trace with retrieved memories
-        thinking_prefix = self._format_thinking_prefix(memories)
-        text += thinking_prefix
+        # Seed the reasoning trace so we start inside <think>
+        text += "<think>\n"
 
         input_ids = self.tokenizer.encode(text, return_tensors="pt").to(self.model.device)
 
-        # Emit the memory prefix as a replaceable block (updated on memory swaps)
+        # Emit the memory block as a replaceable region (for UI display).
         if memories:
-            prefix_lines = ["I remember these things about the user:"]
-            for mem in memories:
-                prefix_lines.append(f"- {mem.content}")
-            prefix_lines.append("")
-            prefix_lines.append("I should use these memories to inform my response.\n")
-            yield StreamEvent('thinking_prefix', {'t': "\n".join(prefix_lines)})
+            yield StreamEvent('thinking_prefix', {'t': self._format_memory_block(memories)})
 
         max_tokens = self.config.model.max_tokens
         all_tokens: list[int] = []
@@ -338,17 +325,13 @@ class StreamingMemoryService:
                         get_memory_tokens(mem_content)
 
                     current_mem_contents = reordered_contents
-                    messages = [
-                        {"role": "system", "content": self.config.system_prompt},
-                    ]
-                    for h in history[-6:]:
-                        messages.append(h)
-                    messages.append({"role": "user", "content": message})
 
                     text = self.tokenizer.apply_chat_template(
-                        messages, tokenize=False, add_generation_prompt=True
+                        self._build_messages(reordered_memories, history, message),
+                        tokenize=False,
+                        add_generation_prompt=True,
                     )
-                    text += self._format_thinking_prefix(reordered_memories)
+                    text += "<think>\n"
 
                     new_prefix_ids = self.tokenizer.encode(text, return_tensors="pt").to(
                         self.model.device
@@ -368,13 +351,10 @@ class StreamingMemoryService:
                         'all': base_context_size + self.pool_total_tokens,
                     })
 
-                    # Re-emit thinking prefix with updated memories
-                    prefix_lines = ["I remember these things about the user:"]
-                    for mem in reordered_memories:
-                        prefix_lines.append(f"- {mem.content}")
-                    prefix_lines.append("")
-                    prefix_lines.append("I should use these memories to inform my response.\n")
-                    yield StreamEvent('thinking_prefix', {'t': "\n".join(prefix_lines)})
+                    yield StreamEvent(
+                        'thinking_prefix',
+                        {'t': self._format_memory_block(reordered_memories)},
+                    )
 
                     yield StreamEvent('memory_update', {
                         'memories': reordered_contents,
