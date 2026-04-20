@@ -166,6 +166,10 @@ class StreamingMemoryService:
 
         input_ids = self.tokenizer.encode(text, return_tensors="pt").to(self.model.device)
 
+        # Emit the exact prompt prefix (everything sent to the model before
+        # generation) so the UI can show what the model is actually seeing.
+        yield StreamEvent('prompt_prefix', {'t': text})
+
         # Emit the memory block as a replaceable region (for UI display).
         if memories:
             yield StreamEvent('thinking_prefix', {'t': self._format_memory_block(memories)})
@@ -339,6 +343,9 @@ class StreamingMemoryService:
 
                     generated_tensor = torch.tensor([all_tokens], device=self.model.device)
                     current_ids = torch.cat([new_prefix_ids, generated_tensor], dim=1)
+
+                    # Emit the updated prompt prefix for the UI.
+                    yield StreamEvent('prompt_prefix', {'t': text})
 
                     # Track context size after memory swap
                     current_memory_tokens = sum(get_memory_tokens(m) for m in current_mem_contents)

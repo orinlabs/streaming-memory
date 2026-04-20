@@ -46,6 +46,7 @@ export function useStreamingMemoryDemo(apiUrlOverride) {
 
   const [currentMemories, setCurrentMemories] = useState([]);
   const [thinkingPrefix, setThinkingPrefix] = useState('');
+  const [promptPrefix, setPromptPrefix] = useState('');
   const [thinking, setThinking] = useState('');
   const [response, setResponse] = useState('');
 
@@ -86,6 +87,14 @@ export function useStreamingMemoryDemo(apiUrlOverride) {
   }, [isStreaming, messages, thinking, response, userScrolledUp]);
 
   const contextSnapshot = useMemo(() => {
+    // When the backend has told us the exact prompt prefix, show it verbatim —
+    // this is the literal text fed to the tokenizer (minus live generation).
+    if (promptPrefix) {
+      return {
+        lines: promptPrefix.replace(/\r/g, '').split('\n'),
+        text: promptPrefix,
+      };
+    }
     return buildContextSnapshot({
       history: requestHistory,
       userMessage: currentUserMessage,
@@ -94,6 +103,7 @@ export function useStreamingMemoryDemo(apiUrlOverride) {
       response,
     });
   }, [
+    promptPrefix,
     currentMemories,
     currentUserMessage,
     requestHistory,
@@ -163,6 +173,7 @@ export function useStreamingMemoryDemo(apiUrlOverride) {
 
   const resetRunState = () => {
     setThinkingPrefix('');
+    setPromptPrefix('');
     setThinking('');
     setResponse('');
     setCurrentMemories([]);
@@ -314,6 +325,8 @@ export function useStreamingMemoryDemo(apiUrlOverride) {
               setWaitingForFirstToken(false);
             } else if (data.type === 'thinking_prefix') {
               setThinkingPrefix(data.t || '');
+            } else if (data.type === 'prompt_prefix') {
+              setPromptPrefix(data.t || '');
             } else if (data.type === 'memory_update') {
               latestMemories = data.memories || [];
               setCurrentMemories(latestMemories);
