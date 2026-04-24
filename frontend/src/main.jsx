@@ -35,10 +35,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route
             path="/superdemo"
             element={
-              <Demo
-                apiUrl={SUPERMEMORY_API_URL}
-                label="Family Assistant · Supermemory"
-              />
+              <Demo apiUrl={SUPERMEMORY_API_URL} />
             }
           />
           <Route path="/aryan" element={<AryanDemo />} />
