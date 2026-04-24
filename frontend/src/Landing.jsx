@@ -233,7 +233,7 @@ export default function Landing() {
             </p>
 
             <Link
-              to="/demo"
+              to="/superdemo"
               className="inline-block px-8 py-4 bg-[#1a1a1a] text-white rounded-full font-medium hover:bg-[#333] transition-colors text-lg"
             >
               Try the Demo
@@ -374,7 +374,7 @@ export default function Landing() {
             </p>
 
             <Link
-              to="/demo"
+              to="/superdemo"
               className="inline-block px-8 py-4 bg-[#1a1a1a] text-white rounded-full font-medium hover:bg-[#333] transition-colors"
             >
               Try it here
